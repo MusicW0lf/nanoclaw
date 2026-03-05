@@ -1,4 +1,5 @@
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Users\admin\Desktop\nanoclaw\update-fork.ps1" -WorkingDirectory "C:\Users\admin\Desktop\nanoclaw"
+$root = $PSScriptRoot
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\update-fork.ps1`"" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -Daily -At "12:00PM"
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
