@@ -1,4 +1,4 @@
-Set-Location "C:\Users\admin\Desktop\nanoclaw"
+Set-Location "$PSScriptRoot\..\.."
 New-Item -ItemType Directory -Force -Path "logs" | Out-Null
 
 $ts = { Get-Date -Format "yyyy-MM-dd HH:mm:ss" }
