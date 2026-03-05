@@ -457,7 +457,42 @@ async function runQuery(
   })) {
     messageCount++;
     const msgType = message.type === 'system' ? `system/${(message as { subtype?: string }).subtype}` : message.type;
-    log(`[msg #${messageCount}] type=${msgType}`);
+
+    if (message.type === 'user') {
+      const content = (message as { message?: { content?: unknown } }).message?.content;
+      let preview = '';
+      if (typeof content === 'string') {
+        preview = content.slice(0, 120).replace(/\n/g, ' ');
+      } else if (Array.isArray(content)) {
+        const toolResults = (content as Array<{ type: string; tool_use_id?: string; content?: unknown }>)
+          .filter(c => c.type === 'tool_result')
+          .map(c => `[tool_result: ${JSON.stringify(c.content).slice(0, 80)}]`);
+        const texts = (content as Array<{ type: string; text?: string }>)
+          .filter(c => c.type === 'text')
+          .map(c => c.text || '');
+        preview = [...toolResults, ...texts].join(' ').slice(0, 120).replace(/\n/g, ' ');
+      }
+      log(`[msg #${messageCount}] user${preview ? ` | ${preview}` : ''}`);
+    } else if (message.type === 'assistant') {
+      const content = (message as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(content)) {
+        const parts: string[] = [];
+        const texts = (content as Array<{ type: string; text?: string }>)
+          .filter(c => c.type === 'text')
+          .map(c => (c.text || '').replace(/\n/g, ' ').trim())
+          .filter(t => t.length > 0);
+        if (texts.length > 0) parts.push(`"${texts.join(' ').slice(0, 120)}"`);
+        const tools = (content as Array<{ type: string; name?: string; input?: unknown }>)
+          .filter(c => c.type === 'tool_use')
+          .map(c => `${c.name}(${JSON.stringify(c.input).slice(0, 80)})`);
+        if (tools.length > 0) parts.push(`→ ${tools.join(', ')}`);
+        log(`[msg #${messageCount}] assistant | ${parts.join(' | ') || '(no content)'}`);
+      } else {
+        log(`[msg #${messageCount}] assistant`);
+      }
+    } else {
+      log(`[msg #${messageCount}] type=${msgType}`);
+    }
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
