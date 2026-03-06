@@ -297,13 +297,13 @@ class TelegramRoleplayChannel extends TelegramChannel {
     // Patch message handling to use tg-rp: prefix and auto-register
     return new Promise<void>((resolve) => {
       const bot = new Bot(this['botToken'] as string);
+      (this as any).bot = bot; // needed so inherited sendMessage/setTyping can use it
 
       bot.command('chatid', (ctx) => {
         const chatId = ctx.chat.id;
-        ctx.reply(
-          `Roleplay chat ID: \`${RP_JID_PREFIX}${chatId}\``,
-          { parse_mode: 'Markdown' },
-        );
+        ctx.reply(`Roleplay chat ID: \`${RP_JID_PREFIX}${chatId}\``, {
+          parse_mode: 'Markdown',
+        });
       });
 
       bot.command('ping', (ctx) => {
@@ -331,7 +331,13 @@ class TelegramRoleplayChannel extends TelegramChannel {
         const isGroup =
           ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
 
-        this.rpOpts.onChatMetadata(chatJid, timestamp, chatName, 'telegram', isGroup);
+        this.rpOpts.onChatMetadata(
+          chatJid,
+          timestamp,
+          chatName,
+          'telegram',
+          isGroup,
+        );
 
         // Auto-register on first message if not yet registered
         if (!this.rpOpts.registeredGroups()[chatJid]) {
@@ -348,7 +354,10 @@ class TelegramRoleplayChannel extends TelegramChannel {
             });
             logger.info({ chatJid }, 'Roleplay group auto-registered');
           } else {
-            logger.debug({ chatJid }, 'Roleplay message from unregistered chat');
+            logger.debug(
+              { chatJid },
+              'Roleplay message from unregistered chat',
+            );
             return;
           }
         }
@@ -391,7 +400,9 @@ registerChannel('telegram-roleplay', (opts: ChannelOpts) => {
     envVars.TELEGRAM_BOT_TOKEN_ROLEPLAY ||
     '';
   if (!token) {
-    logger.warn('Telegram roleplay: TELEGRAM_BOT_TOKEN_ROLEPLAY not set — skipping');
+    logger.warn(
+      'Telegram roleplay: TELEGRAM_BOT_TOKEN_ROLEPLAY not set — skipping',
+    );
     return null;
   }
   return new TelegramRoleplayChannel(token, opts);
