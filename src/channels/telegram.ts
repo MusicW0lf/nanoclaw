@@ -94,8 +94,15 @@ export class TelegramChannel implements Channel {
       }
 
       // Store chat metadata for discovery
-      const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(chatJid, timestamp, chatName, 'telegram', isGroup);
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        chatName,
+        'telegram',
+        isGroup,
+      );
 
       // Only deliver full message for registered groups
       const group = this.opts.registeredGroups()[chatJid];
@@ -138,8 +145,15 @@ export class TelegramChannel implements Channel {
         'Unknown';
       const caption = ctx.message.caption ? ` ${ctx.message.caption}` : '';
 
-      const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
       this.opts.onMessage(chatJid, {
         id: ctx.message.message_id.toString(),
         chat_jid: chatJid,
@@ -153,9 +167,7 @@ export class TelegramChannel implements Channel {
 
     this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) =>
-      storeNonText(ctx, '[Voice message]'),
-    );
+    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
     this.bot.on('message:document', (ctx) => {
       const name = ctx.message.document?.file_name || 'file';
@@ -254,4 +266,144 @@ registerChannel('telegram', (opts: ChannelOpts) => {
     return null;
   }
   return new TelegramChannel(token, opts);
+});
+
+const RP_JID_PREFIX = 'tg-rp:';
+const RP_FOLDER = 'telegram_roleplay';
+
+class TelegramRoleplayChannel extends TelegramChannel {
+  private registered = false;
+  private rpOpts: ChannelOpts;
+
+  constructor(botToken: string, opts: ChannelOpts) {
+    super(botToken, opts);
+    this.rpOpts = opts;
+  }
+
+  ownsJid(jid: string): boolean {
+    return jid.startsWith(RP_JID_PREFIX);
+  }
+
+  async sendMessage(jid: string, text: string): Promise<void> {
+    // Translate tg-rp: JID back to plain tg: for actual sending
+    await super.sendMessage(jid.replace(RP_JID_PREFIX, 'tg:'), text);
+  }
+
+  async setTyping(jid: string, isTyping: boolean): Promise<void> {
+    await super.setTyping?.(jid.replace(RP_JID_PREFIX, 'tg:'), isTyping);
+  }
+
+  async connect(): Promise<void> {
+    // Patch message handling to use tg-rp: prefix and auto-register
+    return new Promise<void>((resolve) => {
+      const bot = new Bot(this['botToken'] as string);
+      (this as any).bot = bot; // needed so inherited sendMessage/setTyping can use it
+
+      bot.command('chatid', (ctx) => {
+        const chatId = ctx.chat.id;
+        ctx.reply(`Roleplay chat ID: \`${RP_JID_PREFIX}${chatId}\``, {
+          parse_mode: 'Markdown',
+        });
+      });
+
+      bot.command('ping', (ctx) => {
+        ctx.reply('Roleplay agent is online.');
+      });
+
+      bot.on('message:text', async (ctx) => {
+        if (ctx.message.text.startsWith('/')) return;
+
+        const chatId = ctx.chat.id;
+        const chatJid = `${RP_JID_PREFIX}${chatId}`;
+        const timestamp = new Date(ctx.message.date * 1000).toISOString();
+        const senderName =
+          ctx.from?.first_name ||
+          ctx.from?.username ||
+          ctx.from?.id.toString() ||
+          'Unknown';
+        const sender = ctx.from?.id.toString() || '';
+        const msgId = ctx.message.message_id.toString();
+        const chatName =
+          ctx.chat.type === 'private'
+            ? senderName
+            : (ctx.chat as any).title || chatJid;
+
+        const isGroup =
+          ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+
+        this.rpOpts.onChatMetadata(
+          chatJid,
+          timestamp,
+          chatName,
+          'telegram',
+          isGroup,
+        );
+
+        // Auto-register on first message if not yet registered
+        if (!this.rpOpts.registeredGroups()[chatJid]) {
+          if (!this.registered && this.rpOpts.onRegisterGroup) {
+            this.registered = true;
+            this.rpOpts.onRegisterGroup(chatJid, {
+              name: 'Roleplay',
+              folder: RP_FOLDER,
+              trigger: '',
+              added_at: timestamp,
+              requiresTrigger: false,
+              isMain: false,
+              containerConfig: { agentTemplate: 'roleplay-agent' },
+            });
+            logger.info({ chatJid }, 'Roleplay group auto-registered');
+          } else {
+            logger.debug(
+              { chatJid },
+              'Roleplay message from unregistered chat',
+            );
+            return;
+          }
+        }
+
+        this.rpOpts.onMessage(chatJid, {
+          id: msgId,
+          chat_jid: chatJid,
+          sender,
+          sender_name: senderName,
+          content: ctx.message.text,
+          timestamp,
+          is_from_me: false,
+        });
+
+        logger.info({ chatJid, sender: senderName }, 'Roleplay message stored');
+      });
+
+      bot.catch((err) => {
+        logger.error({ err: err.message }, 'Roleplay Telegram bot error');
+      });
+
+      bot.start({
+        onStart: (botInfo) => {
+          logger.info(
+            { username: botInfo.username, id: botInfo.id },
+            'Roleplay Telegram bot connected',
+          );
+          console.log(`\n  Roleplay bot: @${botInfo.username}`);
+          resolve();
+        },
+      });
+    });
+  }
+}
+
+registerChannel('telegram-roleplay', (opts: ChannelOpts) => {
+  const envVars = readEnvFile(['TELEGRAM_BOT_TOKEN_ROLEPLAY']);
+  const token =
+    process.env.TELEGRAM_BOT_TOKEN_ROLEPLAY ||
+    envVars.TELEGRAM_BOT_TOKEN_ROLEPLAY ||
+    '';
+  if (!token) {
+    logger.warn(
+      'Telegram roleplay: TELEGRAM_BOT_TOKEN_ROLEPLAY not set — skipping',
+    );
+    return null;
+  }
+  return new TelegramRoleplayChannel(token, opts);
 });

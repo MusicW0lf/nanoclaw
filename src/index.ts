@@ -212,7 +212,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
-      if (text) {
+      if (text && text !== '(no response)') {
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
       }
@@ -505,6 +505,8 @@ async function main(): Promise<void> {
       isGroup?: boolean,
     ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
     registeredGroups: () => registeredGroups,
+    onRegisterGroup: (jid: string, group: RegisteredGroup) =>
+      registerGroup(jid, group),
   };
 
   // Create and connect all registered channels.
