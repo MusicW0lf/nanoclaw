@@ -176,10 +176,11 @@ function buildVolumeMounts(
   // Copy agent-runner source into a per-group writable location so agents
   // can customize it (add tools, change behavior) without affecting other
   // groups. Recompiled on container startup via entrypoint.sh.
+  const agentTemplateName = group.containerConfig?.agentTemplate ?? 'agent-runner';
   const agentRunnerSrc = path.join(
     projectRoot,
     'container',
-    'agent-runner',
+    agentTemplateName,
     'src',
   );
   const groupAgentRunnerDir = path.join(
@@ -220,6 +221,8 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_BASE_URL',
     'ANTHROPIC_AUTH_TOKEN',
+    'OPENROUTER_API_KEY',
+    'ROLEPLAY_MODEL',
   ]);
 }
 
