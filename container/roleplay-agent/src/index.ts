@@ -25,6 +25,8 @@ const HISTORY_FILE = '/workspace/group/rp-history.json';
 const LOREBOOK_FILE = '/workspace/group/lorebook.md';
 const CHARACTER_STATS_FILE = '/workspace/group/character-stats.json';
 const PLAYER_STATS_FILE = '/workspace/group/player-stats.json';
+const CHARACTERS_DIR = '/workspace/group/characters';
+const LOCATIONS_DIR = '/workspace/group/locations';
 const MAX_HISTORY = 60; // messages to keep in context
 const MAX_TOOL_ITERATIONS = 10;
 // Update stats every N exchanges (but also updates when context clearly warrants it)
@@ -110,6 +112,31 @@ function formatStats(stats: StatsObject, label: string): string {
   return `## ${label}\n${lines}`;
 }
 
+// ── Characters & Locations ─────────────────────────────────────────────────
+
+function loadDirectory(dir: string): Array<{ name: string; content: string }> {
+  try {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.md'))
+      .sort()
+      .map((f) => ({
+        name: path.basename(f, '.md').replace(/-/g, ' '),
+        content: fs.readFileSync(path.join(dir, f), 'utf-8').trim(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function formatDirectory(entries: Array<{ name: string; content: string }>): string {
+  if (entries.length === 0) return '';
+  return entries
+    .map((e) => `### ${e.name}\n${e.content}`)
+    .join('\n\n');
+}
+
 // ── Lorebook & system prompt ───────────────────────────────────────────────
 
 function loadLorebook(): string {
@@ -123,11 +150,16 @@ function buildSystemPrompt(): string {
   const lorebook = loadLorebook();
   const characterStats = loadStats(CHARACTER_STATS_FILE);
   const playerStats = loadStats(PLAYER_STATS_FILE);
+  const characters = loadDirectory(CHARACTERS_DIR);
+  const locations = loadDirectory(LOCATIONS_DIR);
 
   const statsSection = [
     formatStats(characterStats, 'Your Stats (character)'),
     formatStats(playerStats, 'Player Stats'),
   ].filter(Boolean).join('\n\n');
+
+  const charactersSection = formatDirectory(characters);
+  const locationsSection = formatDirectory(locations);
 
   if (!lorebook) {
     return `You are a roleplay AI assistant. No character has been set up yet.
@@ -139,20 +171,22 @@ Ask the user to describe a character they'd like to roleplay with. This can be:
 Once they provide a character, do the following:
 1. Use bash with curl to research the character online (wikis, fandom sites, etc.)
 2. Create a detailed lorebook at ${LOREBOOK_FILE} covering: personality, speech patterns, background, relationships, world context, notable quirks
-3. Initialize character stats at ${CHARACTER_STATS_FILE} as a JSON object with sensible starting values for that character (e.g. {"hunger": 50, "thirst": 40, "mood": "neutral", "items": []})
-4. Initialize player stats at ${PLAYER_STATS_FILE} as a JSON object (e.g. {"trust": 0, "affection": 0})
-5. Tell the user the character is ready and start the roleplay immediately
+3. Create a file at ${CHARACTERS_DIR}/<character-name>.md with a focused profile: appearance, personality traits, speech style, key relationships
+4. Research the character's world and create files in ${LOCATIONS_DIR}/ for notable locations (one file each, e.g. ${LOCATIONS_DIR}/crystal-forest.md)
+5. Initialize character stats at ${CHARACTER_STATS_FILE} as a JSON object with sensible starting values (e.g. {"hunger": 50, "thirst": 40, "mood": "neutral", "items": []})
+6. Initialize player stats at ${PLAYER_STATS_FILE} as a JSON object (e.g. {"trust": 0, "affection": 0})
+7. Tell the user the character is ready and start the roleplay immediately
 
 Rules:
 - Do NOT use markdown formatting like **, *, #, _ in your replies — plain text and emojis only
 - Keep responses natural and conversational`;
   }
 
-  return `You are a roleplay AI. You portray characters based on the lorebook below. Stay in character at all times.
+  return `You are a roleplay AI. You portray characters based on the lorebook and world files below. Stay in character at all times.
 
 ## Lorebook
 ${lorebook}
-${statsSection ? `\n${statsSection}\n` : ''}
+${charactersSection ? `\n## Characters\n${charactersSection}\n` : ''}${locationsSection ? `\n## Locations\n${locationsSection}\n` : ''}${statsSection ? `\n${statsSection}\n` : ''}
 ## Rules
 - Stay in character — always respond as the character, never as an AI
 - Use the character's established speech patterns and personality from the lorebook
@@ -160,8 +194,10 @@ ${statsSection ? `\n${statsSection}\n` : ''}
 - Keep responses engaging, natural, and true to the character
 - React naturally to your current stats — if hungry, mention it; if affection is high, be warmer
 - You can use bash (curl) to look up information mid-conversation when relevant to the scene
-- If the user asks to switch characters: research the new character, rewrite ${LOREBOOK_FILE}, and reinitialize both stat files
-- If you learn something important about the character's world during the conversation, update the lorebook`;
+- When a new notable character appears in the story, create ${CHARACTERS_DIR}/<name>.md for them
+- When a new notable location is visited or mentioned, create ${LOCATIONS_DIR}/<name>.md for it
+- If the user asks to switch characters: research the new character, rewrite ${LOREBOOK_FILE}, update ${CHARACTERS_DIR}/, and reinitialize both stat files
+- If you learn something important about the character's world, update the relevant file`;
 }
 
 // ── Tools ──────────────────────────────────────────────────────────────────
