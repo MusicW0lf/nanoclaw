@@ -1,4 +1,5 @@
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File C:\Users\admin\Desktop\nanoclaw\start-nanoclaw.ps1" -WorkingDirectory "C:\Users\admin\Desktop\nanoclaw"
+$root = $PSScriptRoot
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\start-nanoclaw.ps1`"" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
