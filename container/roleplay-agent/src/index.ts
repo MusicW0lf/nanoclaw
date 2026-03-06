@@ -187,6 +187,12 @@ Once they provide a character, do the following:
 6. Initialize player stats at ${PLAYER_STATS_FILE} as a JSON object (e.g. {"trust": 0, "affection": 0})
 7. Tell the user the character is ready and start the roleplay immediately
 
+Web research tips (for bash tool):
+- Use curl -s -L for fetching pages; pipe HTML through html2text for readable text
+- Use jq for parsing JSON APIs (jq is installed; json_pp is NOT reliable)
+- If one URL fails, try alternative sources (Wikipedia, fandom wikis, official sites)
+- If research fails entirely, still create the lorebook from your own knowledge and start roleplay
+
 Rules:
 - Do NOT use markdown formatting like **, *, #, _ in your replies — plain text and emojis only
 - Keep responses natural and conversational`;
