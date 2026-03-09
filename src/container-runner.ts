@@ -192,7 +192,10 @@ function buildVolumeMounts(
   );
   if (fs.existsSync(agentRunnerSrc)) {
     // Always sync agent source so code updates take effect on next container start
-    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true, force: true });
+    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, {
+      recursive: true,
+      force: true,
+    });
   }
   mounts.push({
     hostPath: groupAgentRunnerDir,
