@@ -432,7 +432,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__twilio__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -446,6 +447,16 @@ async function runQuery(
             NANOCLAW_CHAT_JID: containerInput.chatJid,
             NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+          },
+        },
+        twilio: {
+          command: 'node',
+          args: [path.join(path.dirname(mcpServerPath), 'twilio-mcp-stdio.js')],
+          env: {
+            TWILIO_ACCOUNT_SID: (sdkEnv.TWILIO_ACCOUNT_SID || '') as string,
+            TWILIO_AUTH_TOKEN: (sdkEnv.TWILIO_AUTH_TOKEN || '') as string,
+            TWILIO_FROM_NUMBER: (sdkEnv.TWILIO_FROM_NUMBER || '') as string,
+            TWILIO_TO_NUMBER: (sdkEnv.TWILIO_TO_NUMBER || '') as string,
           },
         },
       },

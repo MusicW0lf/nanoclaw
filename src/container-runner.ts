@@ -225,6 +225,10 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_AUTH_TOKEN',
     'OPENROUTER_API_KEY',
     'ROLEPLAY_MODEL',
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_FROM_NUMBER',
+    'TWILIO_TO_NUMBER',
   ]);
 }
 

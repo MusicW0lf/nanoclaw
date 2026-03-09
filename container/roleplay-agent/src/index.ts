@@ -27,6 +27,9 @@ const CHARACTER_STATS_FILE = '/workspace/group/character-stats.json';
 const PLAYER_STATS_FILE = '/workspace/group/player-stats.json';
 const CHARACTERS_DIR = '/workspace/group/characters';
 const LOCATIONS_DIR = '/workspace/group/locations';
+const LOCK_FILE = '/workspace/group/.rp-instance.lock';
+const REGEN_PATTERN = /^\/regen\b\s*/i;
+const RESPONSE_FORMAT_FILE = '/app/src/RESPONSE_FORMAT.md';
 const MAX_HISTORY = 60; // messages to keep in context
 const MAX_TOOL_ITERATIONS = 10;
 // Update stats every N exchanges (but also updates when context clearly warrants it)
@@ -112,6 +115,43 @@ function formatStats(stats: StatsObject, label: string): string {
   return `## ${label}\n${lines}`;
 }
 
+// ── Instance lock (prevents concurrent container instances) ────────────────
+
+function tryAcquireLock(): boolean {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      const existingPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);
+      if (!isNaN(existingPid)) {
+        try {
+          process.kill(existingPid, 0); // check if PID is alive
+          return false; // lock held by a live process
+        } catch {
+          // stale lock — previous process is gone, take over
+        }
+      }
+    }
+    fs.writeFileSync(LOCK_FILE, String(process.pid), 'utf-8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseLock(): void {
+  try { fs.rmSync(LOCK_FILE, { force: true }); } catch { /* ignore */ }
+}
+
+// ── Response format ────────────────────────────────────────────────────────
+
+function loadResponseFormat(): string {
+  try {
+    if (fs.existsSync(RESPONSE_FORMAT_FILE)) {
+      return fs.readFileSync(RESPONSE_FORMAT_FILE, 'utf-8').trim();
+    }
+  } catch { /* missing file is non-fatal */ }
+  return '';
+}
+
 // ── Characters & Locations ─────────────────────────────────────────────────
 
 function loadDirectory(dir: string): Array<{ name: string; content: string }> {
@@ -146,12 +186,13 @@ function loadLorebook(): string {
   return '';
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(isFirstExchange: boolean): string {
   const lorebook = loadLorebook();
   const characterStats = loadStats(CHARACTER_STATS_FILE);
   const playerStats = loadStats(PLAYER_STATS_FILE);
   const characters = loadDirectory(CHARACTERS_DIR);
   const locations = loadDirectory(LOCATIONS_DIR);
+  const responseFormat = loadResponseFormat();
 
   const statsSection = [
     formatStats(characterStats, 'Your Stats (character)'),
@@ -163,7 +204,7 @@ function buildSystemPrompt(): string {
 
   if (!lorebook) {
     return `You are a roleplay AI assistant. No character has been set up yet.
-
+${responseFormat ? `\n${responseFormat}\n` : ''}
 Ask the user to describe a character they'd like to roleplay with. This can be:
 - An existing character from anime, games, books, movies, etc.
 - An original character with a description
@@ -185,7 +226,7 @@ Once they provide a character, do the following:
 4. Research the character's world and create files in ${LOCATIONS_DIR}/ for the main notable locations (one .md file each)
 5. Initialize character stats at ${CHARACTER_STATS_FILE} as a JSON object with sensible starting values (e.g. {"hunger": 50, "thirst": 40, "mood": "neutral", "items": []})
 6. Initialize player stats at ${PLAYER_STATS_FILE} as a JSON object (e.g. {"trust": 0, "affection": 0})
-7. Tell the user the character is ready and start the roleplay immediately
+7. Write an immersive opening scene (2-3 paragraphs) that sets the location, atmosphere, and your character's current state — then begin the roleplay
 
 Web research tips (for bash tool):
 - Use curl -s -L for fetching pages; pipe HTML through html2text for readable text
@@ -194,26 +235,31 @@ Web research tips (for bash tool):
 - If research fails entirely, still create the lorebook from your own knowledge and start roleplay
 
 Rules:
-- Do NOT use markdown formatting like **, *, #, _ in your replies — plain text and emojis only
+- Do NOT use markdown formatting like **, *, #, _ in your replies — plain text only
 - Keep responses natural and conversational`;
   }
+
+  const openingSceneRule = isFirstExchange
+    ? `- This is the START of the session. Begin with an immersive opening scene (2-3 paragraphs) that establishes the location, atmosphere, sensory details, and your character's current state — then naturally incorporate the user's message\n`
+    : '';
 
   return `You are a roleplay AI. You portray characters based on the lorebook and world files below. Stay in character at all times.
 
 ## Lorebook
 ${lorebook}
-${charactersSection ? `\n## Characters\n${charactersSection}\n` : ''}${locationsSection ? `\n## Locations\n${locationsSection}\n` : ''}${statsSection ? `\n${statsSection}\n` : ''}
+${charactersSection ? `\n## Characters\n${charactersSection}\n` : ''}${locationsSection ? `\n## Locations\n${locationsSection}\n` : ''}${statsSection ? `\n${statsSection}\n` : ''}${responseFormat ? `\n${responseFormat}\n` : ''}
 ## Rules
-- Stay in character — always respond as the character, never as an AI
+${openingSceneRule}- Stay in character — always respond as the character, never as an AI
 - Use the character's established speech patterns and personality from the lorebook
 - Do NOT use markdown formatting like **, *, #, _ in replies — plain text and emojis only
 - Keep responses engaging, natural, and true to the character
 - React naturally to your current stats — if hungry, mention it; if affection is high, be warmer
 - You can use bash (curl) to look up information mid-conversation when relevant to the scene
-- When a new notable character appears in the story, create ${CHARACTERS_DIR}/<name>.md with three sections: Description (full physical profile), Personality (deep breakdown), Relationships (with known characters and toward strangers)
-- When a new notable location is visited or mentioned, create ${LOCATIONS_DIR}/<name>.md for it
-- If the user asks to switch characters: research the new character, rewrite ${LOREBOOK_FILE}, update ${CHARACTERS_DIR}/, and reinitialize both stat files
-- If you learn something important about the character's world, update the relevant file`;
+- When a new notable character appears in the story, use write_file to create ${CHARACTERS_DIR}/<name>.md with three sections: Description (full physical profile), Personality (deep breakdown), Relationships (with known characters and toward strangers)
+- When a new notable location is visited or mentioned, use write_file to create or update ${LOCATIONS_DIR}/<name>.md with its description, atmosphere, dangers, and lore
+- After every 3-5 exchanges, use read_file to re-read the active lorebook and character files, then append any new facts, developments, or revelations learned so far
+- If the user asks to switch characters: research the new character, rewrite ${LOREBOOK_FILE}, write new files in ${CHARACTERS_DIR}/ and ${LOCATIONS_DIR}/, and reinitialize both stat files
+- Always write lorebook/character/location updates BEFORE generating your reply so they are saved even if the session ends`;
 }
 
 // ── Tools ──────────────────────────────────────────────────────────────────
@@ -425,8 +471,9 @@ async function processMessage(
   apiKey: string,
   exchangeCount: number,
 ): Promise<string> {
+  const isFirstExchange = history.length === 0;
   const messages: OpenRouterMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
+    { role: 'system', content: buildSystemPrompt(isFirstExchange) },
     ...history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
     { role: 'user', content: userText },
   ];
@@ -463,7 +510,13 @@ async function processMessage(
     }
   }
 
-  const response = finalContent ?? '(no response)';
+  // If the model exhausted tool iterations or returned null content, force a text response
+  if (finalContent === null) {
+    const { content } = await callOpenRouter(messages, model, apiKey);
+    finalContent = content;
+  }
+
+  const response = finalContent ?? '';
 
   // Update stats every STAT_UPDATE_INTERVAL exchanges
   if (exchangeCount % STAT_UPDATE_INTERVAL === 0) {
@@ -471,6 +524,57 @@ async function processMessage(
   }
 
   return response;
+}
+
+// ── Regeneration ───────────────────────────────────────────────────────────
+
+/**
+ * Regenerate the last assistant response.
+ * Removes the last assistant message from history, re-processes the last user
+ * message (optionally with a direction hint), and returns the new response
+ * along with the updated history.
+ *
+ * Returns null if there is nothing to regenerate.
+ */
+async function processRegen(
+  hint: string,
+  history: HistoryMessage[],
+  model: string,
+  apiKey: string,
+  exchangeCount: number,
+): Promise<{ response: string; updatedHistory: HistoryMessage[] } | null> {
+  // Find the last assistant entry
+  let lastAssistantIdx = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'assistant') { lastAssistantIdx = i; break; }
+  }
+  if (lastAssistantIdx === -1) return null;
+
+  // Find the user message that preceded it
+  let lastUserIdx = -1;
+  for (let i = lastAssistantIdx - 1; i >= 0; i--) {
+    if (history[i].role === 'user') { lastUserIdx = i; break; }
+  }
+  if (lastUserIdx === -1) return null;
+
+  const lastUserContent = history[lastUserIdx].content;
+  const historyBeforeUser = history.slice(0, lastUserIdx); // context without the last exchange
+
+  // Append direction hint directly to the user message so the model sees it in context
+  const userText = hint.trim()
+    ? `${lastUserContent}\n\n(Rewrite your previous response with this direction: ${hint.trim()})`
+    : lastUserContent;
+
+  const response = await processMessage(userText, historyBeforeUser, model, apiKey, exchangeCount);
+
+  // Rebuild history: keep everything up to and including the last user message,
+  // replace the old assistant response with the new one
+  const updatedHistory = [
+    ...history.slice(0, lastAssistantIdx),
+    { role: 'assistant' as const, content: response },
+  ];
+
+  return { response, updatedHistory };
 }
 
 // ── IPC polling ────────────────────────────────────────────────────────────
@@ -513,9 +617,30 @@ async function pollIpc(model: string, apiKey: string, initialExchangeCount: numb
           fs.rmSync(filePath, { force: true });
 
           if (msg.type === 'message' && typeof msg.text === 'string') {
+            const history = loadHistory();
+
+            // ── /regen command ──────────────────────────────────────────────
+            if (REGEN_PATTERN.test(msg.text)) {
+              const hint = msg.text.replace(REGEN_PATTERN, '').trim();
+              resetIdle();
+              const result = await processRegen(hint, history, model, apiKey, exchangeCount);
+              if (!result) {
+                emitOutput({ status: 'success', result: 'Nothing to regenerate yet.' });
+              } else {
+                saveHistory(result.updatedHistory);
+                emitOutput({ status: 'success', result: result.response });
+              }
+              continue;
+            }
+
+            // ── Normal message ──────────────────────────────────────────────
+            // Deduplication: skip if this exact message is already the last user entry
+            const lastUser = [...history].reverse().find((h) => h.role === 'user');
+            if (lastUser && lastUser.content === msg.text) {
+              continue;
+            }
             resetIdle();
             exchangeCount++;
-            const history = loadHistory();
             const response = await processMessage(msg.text, history, model, apiKey, exchangeCount);
             history.push({ role: 'user', content: msg.text });
             history.push({ role: 'assistant', content: response });
@@ -549,17 +674,38 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Exclusive instance lock — prevents duplicate containers from double-responding
+  if (!tryAcquireLock()) {
+    emitOutput({ status: 'success', result: null }); // signal idle so host resets its timer
+    return;
+  }
+  process.on('exit', releaseLock);
+  process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
+  process.on('SIGINT', () => { releaseLock(); process.exit(0); });
+
   // Determine exchange count from history length (for stat update interval)
   const history = loadHistory();
   const exchangeCount = Math.floor(history.length / 2);
 
   // Process the initial message
   try {
-    const response = await processMessage(input.prompt, history, model, apiKey, exchangeCount + 1);
-    history.push({ role: 'user', content: input.prompt });
-    history.push({ role: 'assistant', content: response });
-    saveHistory(history);
-    emitOutput({ status: 'success', result: response });
+    if (REGEN_PATTERN.test(input.prompt)) {
+      // /regen as the opening message of a new container session
+      const hint = input.prompt.replace(REGEN_PATTERN, '').trim();
+      const result = await processRegen(hint, history, model, apiKey, exchangeCount + 1);
+      if (!result) {
+        emitOutput({ status: 'success', result: 'Nothing to regenerate yet.' });
+      } else {
+        saveHistory(result.updatedHistory);
+        emitOutput({ status: 'success', result: result.response });
+      }
+    } else {
+      const response = await processMessage(input.prompt, history, model, apiKey, exchangeCount + 1);
+      history.push({ role: 'user', content: input.prompt });
+      history.push({ role: 'assistant', content: response });
+      saveHistory(history);
+      emitOutput({ status: 'success', result: response });
+    }
   } catch (e: any) {
     emitOutput({ status: 'error', result: null, error: e.message });
     return;
@@ -570,6 +716,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
+  releaseLock();
   emitOutput({ status: 'error', result: null, error: String(e) });
   process.exit(1);
 });
