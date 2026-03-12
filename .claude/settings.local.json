@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm:*)",
+      "Read(//c/Program Files/nodejs//**)",
+      "Read(//c/Program Files/nodejs/**)",
+      "Bash(node:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(npx:*)",
+      "Bash(bash:*)",
+      "Bash(cp:*)",
+      "Bash(winget install:*)",
+      "Bash(docker info:*)",
+      "Bash(docker:*)",
+      "Bash(powershell.exe:*)"
+    ]
+  }
+}

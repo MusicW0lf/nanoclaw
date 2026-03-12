@@ -26,6 +26,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -245,14 +246,13 @@ function buildContainerArgs(
   }
 
   // Twilio credentials for call_phone MCP tool
-  const twilioVars = [
+  const twilioSecrets = readEnvFile([
     'TWILIO_ACCOUNT_SID',
     'TWILIO_AUTH_TOKEN',
     'TWILIO_FROM_NUMBER',
     'TWILIO_TO_NUMBER',
-  ];
-  for (const key of twilioVars) {
-    const val = process.env[key];
+  ]);
+  for (const [key, val] of Object.entries(twilioSecrets)) {
     if (val) args.push('-e', `${key}=${val}`);
   }
 
@@ -327,6 +327,7 @@ export async function runContainerAgent(
   return new Promise((resolve) => {
     const container = spawn(CONTAINER_RUNTIME_BIN, containerArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
 
     onProcess(container, containerName);

@@ -171,7 +171,7 @@ If it gets messy (more than 3 rounds of conflicts):
   - `git rebase --abort`
   - Recommend merge instead.
 
-# Step 5: Validation
+# Step 5: Validation + Restart
 Run:
 - `npm run build`
 - `npm test` (do not fail the flow if tests are not configured)
@@ -181,6 +181,10 @@ If build fails:
 - Only fix issues clearly caused by the merge (missing imports, type mismatches from merged code).
 - Do not refactor unrelated code.
 - If unclear, ask the user before making changes.
+
+If build succeeds:
+- Run `npm run restart` to kill the old process and start fresh from the new dist.
+- This is mandatory — skipping it leaves the old in-memory process running stale code.
 
 # Step 6: Breaking changes check
 After validation succeeds, check if the update introduced any breaking changes.
@@ -217,8 +221,6 @@ Show:
 - Remaining local diff vs upstream: `git diff --name-only upstream/$UPSTREAM_BRANCH..HEAD`
 
 Tell the user:
-- To rollback: `git reset --hard <backup-tag-from-step-1>`
+- To rollback: `git reset --hard <backup-tag-from-step-1>` then `npm run build && npm run restart`
 - Backup branch also exists: `backup/pre-update-<HASH>-<TIMESTAMP>`
-- Restart the service to apply changes:
-  - If using launchd: `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist && launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist`
-  - If running manually: restart `npm run dev`
+- Service was automatically restarted via `npm run restart`
